@@ -40,18 +40,23 @@ contains
         character(len=:), allocatable :: row_json
         character(len=:), allocatable, intent(inout) :: query
         character(len=:), allocatable, intent(inout) :: db_json
+        logical                                      :: flag
+
         db_json = '{"result":['
 
         ! Read values from database.
         rc = sqlite3_prepare(db, query, stmt)
 
+        flag = .false.
         ! Print rows line by line.
         do while (sqlite3_step(stmt) /= SQLITE_DONE)
             call print_values(stmt, 8, row_json)
             db_json = trim(db_json) // trim(row_json) // trim(',')
+            flag = .true.
         end do
-
-        db_json = trim(adjustl(db_json(0: len(db_json)-1)))
+        if (flag) then
+            db_json = trim(adjustl(db_json(0: len(db_json)-1)))
+        end if
         db_json = trim(db_json) // trim(']}')
 
         ! Delete the statement.

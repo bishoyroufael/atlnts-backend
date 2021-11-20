@@ -16,7 +16,7 @@ contains
         type(c_ptr), intent(inout) :: stmt
         integer, intent(inout) :: rc
         character(len=:), allocatable, intent(inout) :: json_o
-        character(len=:), allocatable, intent(inout) :: user_name
+        character(len=*), intent(in) :: user_name
         character(len=:), allocatable :: query
         query = "SELECT * FROM lafItems WHERE user_name='"
         query = trim(query) // trim(user_name) // trim("'")
@@ -33,31 +33,31 @@ contains
         call json_db(db, rc, stmt, query, json_o)
     end subroutine get_all_lafi_json
 
-    subroutine json_db(db, rc, stmt, query, db_json )
+    subroutine json_db(db, rc, stmt, query, json_o )
         type(c_ptr), intent(inout) :: db
         type(c_ptr), intent(inout) :: stmt
         integer, intent(inout) :: rc
         character(len=:), allocatable :: row_json
         character(len=:), allocatable, intent(inout) :: query
-        character(len=:), allocatable, intent(inout) :: db_json
-        logical                                      :: flag
-
-        db_json = '{"result":['
+        character(len=:), allocatable, intent(inout) :: json_o
+        character(len=:), allocatable :: json_fixed
+        logical                                      :: enter
+        json_o = '{"result":['
 
         ! Read values from database.
         rc = sqlite3_prepare(db, query, stmt)
 
-        flag = .false.
+        enter = .false.
         ! Print rows line by line.
         do while (sqlite3_step(stmt) /= SQLITE_DONE)
             call print_values(stmt, 8, row_json)
-            db_json = trim(db_json) // trim(row_json) // trim(',')
-            flag = .true.
+            json_o = trim(json_o) // trim(row_json) // trim(',')
+            enter = .true.
         end do
-        if (flag) then
-            db_json = trim(adjustl(db_json(0: len(db_json)-1)))
+        if (enter) then
+            json_o = trim(json_o(:len(json_o)-1))
         end if
-        db_json = trim(db_json) // trim(']}')
+        json_o = trim(json_o) // trim(']}')
 
         ! Delete the statement.
         rc = sqlite3_finalize(stmt)
@@ -73,17 +73,27 @@ contains
                             "item_id     INTEGER PRIMARY KEY," // &
                             "user_name VARCHAR(32)," // &
                             "item_name VARCHAR(128)," // &
-                            "item_description TEXT," // &
+                            "item_description VARCHAR(65535)," // &
                             "item_location VARCHAR(128)," // &
                             "item_images VARCHAR(256)," // &
                             "lost_date VARCHAR(64)," // &
-                            "reward_price DOUBLE)", c_null_ptr, c_null_ptr, errmsg)
+                            "reward_price VARCHAR(32))", c_null_ptr, c_null_ptr, errmsg)
                             
         if (rc /= SQLITE_OK) print '("sqlite3_exec(): ", a)', errmsg
     end subroutine create_db
     
     
-    subroutine insert_row(db,rc, stmt, user_name,item_name, item_description, item_location, item_images, lost_date, reward_price)
+    subroutine insert_row(db,&
+                        rc,& 
+                        stmt,&
+                        user_name,&
+                        item_name,&
+                        item_description,&
+                        item_location,&
+                        item_images,&
+                        lost_date,&
+                        reward_price,&
+                        json_o)
         type(c_ptr), intent(inout) :: db
         type(c_ptr), intent(inout) :: stmt
         integer, intent(inout) :: rc
@@ -93,7 +103,9 @@ contains
         character(len=*), intent(in) :: item_location
         character(len=*), intent(in) :: item_images
         character(len=*), intent(in) :: lost_date
-        real(8), intent(in) :: reward_price
+        character(len=*), intent(in) :: reward_price
+        character(len=:), allocatable, intent(inout) :: json_o
+
         ! Create a prepared statement.
         rc = sqlite3_prepare(db, "INSERT INTO lafItems (" // & 
                                     "user_name," // &
@@ -113,17 +125,27 @@ contains
         rc = sqlite3_bind_text(stmt, 4, item_location)
         rc = sqlite3_bind_text(stmt, 5, item_images)
         rc = sqlite3_bind_text(stmt, 6, lost_date)
-        rc = sqlite3_bind_double(stmt, 7, reward_price)
+        rc = sqlite3_bind_text(stmt, 7, reward_price)
 
         ! Run the statement.
         rc = sqlite3_step(stmt)
-        if (rc /= SQLITE_DONE) print '("sqlite3_step(): failed")'
-
+        if (rc /= SQLITE_DONE) then
+            json_o = '{"status" : "failed"}'
+        else
+            json_o = '{"status" : "success"}' 
+        end if
         ! Delete the statement.
         rc = sqlite3_finalize(stmt)
     end subroutine insert_row
 
-    subroutine delete_row(db,rc, stmt, user_name,item_name, item_location, lost_date)
+    subroutine delete_row(db,&
+                        rc,&
+                        stmt,&
+                        user_name,&
+                        item_name,&
+                        item_location,&
+                        lost_date,&
+                        json_o)
         type(c_ptr), intent(inout) :: db
         type(c_ptr), intent(inout) :: stmt
         integer, intent(inout) :: rc
@@ -131,6 +153,7 @@ contains
         character(len=*), intent(in) :: item_name
         character(len=*), intent(in) :: item_location
         character(len=*), intent(in) :: lost_date
+        character(len=:), allocatable, intent(inout) :: json_o
         ! Create a prepared statement.
         rc = sqlite3_prepare(db, "DELETE FROM lafItems WHERE " // & 
                                     "user_name = ? AND " // &
@@ -146,8 +169,11 @@ contains
 
         ! Run the statement.
         rc = sqlite3_step(stmt)
-        if (rc /= SQLITE_DONE) print '("sqlite3_step(): failed")'
-
+        if (rc /= SQLITE_DONE) then
+            json_o = '{"status" : "failed"}'
+        else
+            json_o = '{"status" : "success"}' 
+        end if
         ! Delete the statement.
         rc = sqlite3_finalize(stmt)
     end subroutine delete_row
@@ -160,7 +186,7 @@ contains
         character(len=:), allocatable :: key
         character(len=:), allocatable :: current_val
         character(len=:), allocatable, intent(inout) :: row_json
-        character(len=15) reward_price_string
+        
         row_json = "{"
 
         do i = 0, ncols - 1
@@ -193,9 +219,9 @@ contains
                     current_val = sqlite3_column_text(stmt, i)
                     row_json = trim(row_json) // trim(key) // trim(current_val) // trim('",')
                 case(7)
-                    key = '"reward_prise""'
-                    write(reward_price_string, '(f15.3)') sqlite3_column_double(stmt, i)
-                    row_json = trim(row_json) // trim(key) // trim(adjustl(reward_price_string)) 
+                    key = '"reward_prise":"'
+                    current_val = sqlite3_column_text(stmt, i)
+                    row_json = trim(row_json) // trim(key) // trim(adjustl(current_val)) // trim('"')
                 case default
                     key = '"undefined":""'
                     row_json = trim(row_json) // trim(key) 

@@ -62,6 +62,12 @@ contains
         ! Delete the statement.
         rc = sqlite3_finalize(stmt)
     end subroutine json_db
+    subroutine del_db()
+        integer :: stat
+        open(unit=1234, iostat=stat, file='atlnts-laf.db', status='old')
+        if (stat == 0) close(1234, status='delete')
+    end subroutine del_db
+    
     subroutine create_db(db, rc)
         type(c_ptr), intent(inout) :: db
         integer, intent(inout) :: rc

@@ -75,9 +75,14 @@ contains
         ! retrieve script name (key=DOCUMENT_URI) from dictionary
         call cgi_get( dict, "DOCUMENT_URI", scriptName )
         select case (trim(scriptName))
-            case('/api/v1/test')
-                write(unitNo, AFORMAT) 'API Alive!'
+            case('/api/v1/internal/test_api')
+                write(unitNo, AFORMAT) '{"status":"API Alive!"}'
 
+            case('/api/v1/internal/recreate_db')
+                call del_db()
+                call create_db(db, rc)
+                write(unitNo, AFORMAT) '{"status":"Deleted if was found!"}'
+            
             case('/api/v1/get_laf_items')
                 call get_all_lafi_json(db,rc,stmt,json_o)
                 write(unitNo, AFORMAT) trim(json_o)
